@@ -1,238 +1,430 @@
-# Secure Process Resource Monitoring and Limiting System
+# Secure Process Monitoring, Detection, and Automated Response System
 
-### A Linux-Based Process Monitoring and Resource Control System
-
-A Python-based cybersecurity project designed to monitor running processes on a Linux system, identify processes that consume excessive system resources, and apply predefined resource limits to help maintain system stability and security.
-
-The system uses the `psutil` library to continuously monitor process activity and evaluate processes based on CPU usage, memory consumption, number of child processes, and number of open files.
-
----
+A Linux-based process monitoring and resource control system developed in Python. The system continuously monitors running processes, detects potentially suspicious resource usage, and applies escalating responses when a process repeatedly violates configured thresholds.
 
 ## Overview
 
-A process that consumes an excessive amount of system resources can negatively affect system performance and availability. In some cases, abnormal resource consumption may also be associated with malicious or misbehaving processes.
+The system consists of three main modules:
 
-This project implements a lightweight process monitoring and control system for Linux. It periodically examines running processes and compares their resource usage against predefined thresholds.
+1. **`reader.py`** — monitors running processes and collects resource information.
+2. **`alerts.py`** — analyzes the collected process data and detects suspicious behavior.
+3. **`response.py`** — responds to repeated violations using an escalating response mechanism.
 
-The system monitors:
-
-* CPU utilization
-* Memory consumption
-* Number of child processes
-* Number of open files
-
-When a process exceeds one or more configured limits, the system identifies it as a potentially problematic process and can take appropriate resource-control action.
-
----
-
-## Security Objectives
-
-The project demonstrates several operating-system security concepts:
-
-* Continuous process monitoring
-* Resource usage detection
-* Process-level security policies
-* Detection of excessive resource consumption
-* Prevention of uncontrolled resource usage
-* Linux process management
-* Automated monitoring and enforcement
-
-The goal is to provide a basic defensive mechanism that can help prevent a single process from consuming an excessive amount of system resources.
-
----
-
-## Resource Limits
-
-The monitoring system uses predefined thresholds to determine when a process is consuming an excessive amount of resources.
-
-| Resource        |  Limit |
-| --------------- | -----: |
-| CPU Usage       |    50% |
-| Memory Usage    | 400 MB |
-| Child Processes |     20 |
-| Open Files      |     50 |
-
-These thresholds define the resource limits used by the monitoring system and can be adjusted according to the requirements of the monitored Linux system.
-
----
-
-## Monitored Resources
-
-### CPU Usage
-
-The system monitors the CPU utilization of individual processes.
-
-A process exceeding the configured CPU threshold is identified as consuming excessive processor resources.
-
-### Memory Usage
-
-The system monitors the amount of memory being used by each process.
-
-Processes exceeding the configured memory limit are flagged for exceeding the defined resource policy.
-
-### Child Processes
-
-The system counts the number of child processes associated with each process.
-
-A process creating an unusually large number of child processes may consume significant system resources and is therefore checked against the configured child-process limit.
-
-### Open Files
-
-The system monitors the number of files opened by each process.
-
-Processes exceeding the configured open-file limit are identified as exceeding the resource policy.
-
----
-
-## Monitoring Process
-
-The monitoring system operates continuously rather than performing a single resource check.
-
-The general monitoring process is:
+The modules communicate through JSON files:
 
 ```text
-Running Linux Processes
-          │
-          ▼
-      Process Discovery
-          │
-          ▼
-    Resource Collection
-          │
-          ├──► CPU Usage
-          ├──► Memory Usage
-          ├──► Child Processes
-          └──► Open Files
-          │
-          ▼
-     Limit Comparison
-          │
-          ▼
-   Resource Limit Exceeded?
-       │            │
-      No           Yes
-       │            │
-       ▼            ▼
- Continue       Take Defined
- Monitoring     Control Action
+reader.py
+    │
+    ▼
+process_data.json
+    │
+    ▼
+alerts.py
+    │
+    ▼
+alerts.json
+    │
+    ▼
+response.py
 ```
 
-The monitoring cycle is repeated periodically so that changes in process activity can be detected while the system is running.
+This creates a simple monitoring → detection → response pipeline.
 
 ---
 
-## Main Component
+## Features
 
-### `monitor.py`
-
-`monitor.py` contains the main process monitoring functionality.
-
-It is responsible for:
-
-* Discovering running processes
-* Collecting process information
-* Monitoring CPU usage
-* Monitoring memory usage
-* Counting child processes
-* Checking open files
-* Comparing resource usage against predefined limits
-* Identifying processes that exceed configured limits
-* Applying the defined process/resource control behavior
-
-The monitoring interval is configurable within the program.
+* Continuous monitoring of running Linux processes
+* CPU usage monitoring
+* Memory usage monitoring
+* Child-process counting
+* Open-file counting
+* Configurable detection thresholds
+* Trusted-process exclusions
+* Detection logging
+* JSON-based communication between modules
+* Escalating automated responses
+* Protection for system and terminal processes
 
 ---
 
-## Technologies Used
+## System Architecture
 
-* **Python 3**
-* **psutil**
-* **Linux**
-* Linux process management and resource monitoring
+### 1. Process Monitoring — `reader.py`
 
-The `psutil` library provides access to information about running processes and system resource utilization.
+`reader.py` uses the `psutil` library to continuously inspect running processes.
+
+For each process, it collects:
+
+| Information | Description               |
+| ----------- | ------------------------- |
+| PID         | Process identifier        |
+| Name        | Process name              |
+| CPU %       | Current CPU usage         |
+| Memory (MB) | Resident memory usage     |
+| Children    | Number of child processes |
+| Files       | Number of open files      |
+
+The information is displayed in the terminal and saved to:
+
+```text
+process_data.json
+```
+
+The monitoring module repeats every **2 seconds**.
+
+---
+
+### 2. Suspicious Behavior Detection — `alerts.py`
+
+`alerts.py` reads the process information generated by `reader.py` and checks each process against predefined thresholds.
+
+The current thresholds are:
+
+| Detection       | Threshold |
+| --------------- | --------: |
+| CPU usage       |     > 50% |
+| Memory usage    |  > 400 MB |
+| Child processes |      > 20 |
+| Open files      |      > 50 |
+
+Certain trusted processes are excluded from these checks to reduce unnecessary alerts.
+
+When a process violates a threshold, an alert is:
+
+* Displayed in the terminal
+* Written to `detection_logs.txt`
+* Added to `alerts.json` for the response module
+
+The detection module checks the process data every **2 seconds**.
+
+---
+
+### 3. Automated Response — `response.py`
+
+`response.py` monitors `alerts.json` for detected violations.
+
+The system uses an escalating response based on how many times the same process has been detected:
+
+```text
+First offense
+     │
+     ▼
+Log the violation
+     │
+     ▼
+Second offense
+     │
+     ▼
+Reduce process priority
+     │
+     ▼
+Third or later offense
+     │
+     ▼
+Terminate the process
+```
+
+Specifically:
+
+* **First offense:** The violation is logged.
+* **Second offense:** The process priority is reduced using `renice`.
+* **Third or subsequent offense:** The process is terminated.
+
+The response actions are recorded in:
+
+```text
+response_logs.txt
+```
+
+The module also contains safeguards to prevent it from terminating protected system processes or processes belonging to its own current terminal session.
+
+---
+
+## Project Files
+
+```text
+.
+├── reader.py
+├── alerts.py
+├── response.py
+├── process_data.json
+├── alerts.json
+├── detection_logs.txt
+└── response_logs.txt
+```
+
+### Python Modules
+
+**`reader.py`**
+Collects and displays information about currently running processes and exports the information to `process_data.json`.
+
+**`alerts.py`**
+Reads `process_data.json`, checks processes against the configured thresholds, and generates alerts.
+
+**`response.py`**
+Reads `alerts.json` and applies escalating responses to repeatedly flagged processes.
+
+### Generated Files
+
+**`process_data.json`**
+Contains the most recent process monitoring information.
+
+**`alerts.json`**
+Contains the alerts generated by the detection module.
+
+**`detection_logs.txt`**
+Stores timestamped detection messages.
+
+**`response_logs.txt`**
+Stores timestamped response actions.
+
+> The JSON and log files are generated while the system is running and may not need to be committed to the repository unless they are being included as example output.
 
 ---
 
 ## Requirements
 
-The project requires:
-
-* A Linux operating system
+* Linux operating system
 * Python 3
-* `psutil`
+* Python `psutil` library
 
-Administrative privileges may be required because the program monitors information belonging to system processes and performs process-level control operations.
+Install `psutil` with:
+
+```bash
+python3 -m pip install psutil
+```
+
+If your Linux environment requires a virtual environment, create and activate one before installing the dependency.
 
 ---
 
 ## How to Run
 
-### 1. Install the Required Package
+The three modules should be run in separate terminal windows because they operate continuously.
 
-On the Linux machine, install `psutil`:
+### Step 1 — Start the Process Monitoring Module
 
-```bash
-pip3 install psutil
-```
-
-### 2. Navigate to the Project Directory
-
-Open a terminal and navigate to the directory containing the project files.
-
-### 3. Start the Monitoring System
-
-Run:
+Open the first terminal and run:
 
 ```bash
-sudo python3 monitor.py
+python3 reader.py
 ```
 
-The program will begin monitoring running processes and evaluating their resource usage against the configured limits.
+The module will display a table containing information about currently running processes.
 
-Keep the program running while testing process activity.
-
----
-
-## Testing
-
-The monitoring system can be tested by running processes that consume system resources and observing how the monitoring system responds when configured limits are exceeded.
-
-Testing can include observing:
-
-* Processes with high CPU utilization
-* Processes consuming large amounts of memory
-* Processes creating multiple child processes
-* Processes opening a large number of files
-
-The purpose of testing is to verify that the monitoring system correctly identifies processes that exceed the configured resource thresholds.
-
----
-
-## Project Structure
+Example structure:
 
 ```text
-secure-process-monitor/
-│
-├── monitor.py
-└── README.md
+[START] Process Monitoring Module Running...
+
+[INFO] Monitoring running processes...
+
+PID     Name                CPU %     Memory(MB)    Children  Files
+...
 ```
 
-Additional documentation, reports, or testing results can be included in the repository if available.
+The monitoring data is also continuously written to:
+
+```text
+process_data.json
+```
 
 ---
 
-## Purpose
+### Step 2 — Start the Detection Module
 
-This project demonstrates how operating-system-level monitoring can be incorporated into a defensive security mechanism.
+Open a second terminal and run:
 
-By continuously monitoring process behavior and enforcing predefined resource limits, the system provides a practical example of process-level resource control and basic host-based security monitoring on Linux.
+```bash
+python3 alerts.py
+```
+
+You should see:
+
+```text
+[START] Suspicious Behavior Detection Module Running...
+```
+
+The detection module reads the data produced by `reader.py` and checks it against the configured thresholds.
+
+If no violations are detected, it reports:
+
+```text
+No suspicious behavior detected.
+```
+
+If a violation occurs, an alert is displayed and written to the detection log.
 
 ---
 
-## Contributors
+### Step 3 — Generate Test Activity
 
-This project was developed as a group project.
--  Reem Sukkari
--  Asil Khalid
--  Salma Qasse
+To demonstrate the monitoring and detection functionality, generate normal system activity.
+
+For example:
+
+* Open a web browser.
+* Open several webpages.
+* Perform normal browsing activity.
+
+This generates additional process and resource activity that can be observed by the monitoring system.
+
+**Note:** The system does not specifically detect web browsing. Browser activity is used as a practical way of generating additional process activity. An alert only occurs if a process exceeds one of the configured detection thresholds.
+
+---
+
+### Step 4 — Start the Response Module
+
+Open a third terminal and run:
+
+```bash
+python3 response.py
+```
+
+The response module will display:
+
+```text
+Response module started
+```
+
+It then continuously checks `alerts.json`.
+
+When an alert is detected, the response module determines the number of previous offenses for the associated process and applies the appropriate response.
+
+---
+
+## Testing the Detection and Response System
+
+The complete demonstration can be performed using three terminals:
+
+```text
+Terminal 1
+└── python3 reader.py
+
+Terminal 2
+└── python3 alerts.py
+
+System Activity
+└── Open browser / webpages
+
+Terminal 3
+└── python3 response.py
+```
+
+The expected data flow is:
+
+```text
+Running Processes
+       │
+       ▼
+   reader.py
+       │
+       ▼
+process_data.json
+       │
+       ▼
+   alerts.py
+       │
+       ▼
+   alerts.json
+       │
+       ▼
+ response.py
+       │
+       ├── First offense → Log
+       │
+       ├── Second offense → Reduce priority
+       │
+       └── Third+ offense → Terminate process
+```
+
+---
+
+## Configuration and Demonstration Thresholds
+
+The detection thresholds in `alerts.py` are intentionally configured at relatively low levels:
+
+```python
+CPU_LIMIT = 50
+MEMORY_LIMIT = 400
+CHILDREN_LIMIT = 20
+FILES_LIMIT = 50
+```
+
+These values were selected primarily for **demonstration and testing purposes**. The goal of the project is to clearly demonstrate the complete monitoring → detection → response workflow without requiring extremely high resource consumption or intentionally harmful activity.
+
+For example, a process using more than 50% CPU or 400 MB of memory is **not necessarily malicious or abnormal** on a real system. Similarly, having multiple child processes or open file descriptors can be completely legitimate depending on the application.
+
+Therefore, these thresholds should not be interpreted as universal definitions of suspicious behavior or as recommended production security thresholds. In a real-world deployment, the thresholds would need to be tuned according to the system, workload, process behavior, and organizational requirements.
+
+The intentionally lower demonstration thresholds make it easier to reproduce the detection and response behavior during testing and presentation.
+
+
+---
+
+## Safety Measures
+
+The response module contains several safeguards to reduce the risk of terminating important system or terminal processes.
+
+Protected processes include:
+
+```text
+systemd
+kthreadd
+lightdm
+Xorg
+dbus-daemon
+NetworkManager
+bash
+zsh
+sh
+python3
+qterminal
+xfce4-terminal
+gnome-terminal
+konsole
+xfdesktop
+xfwm4
+xfce4-panel
+xfsettingsd
+Thunar
+```
+
+The response module also identifies processes belonging to the current session and avoids taking action against them.
+
+---
+
+## Limitations
+
+This project is a simplified process monitoring and response system intended for educational purposes.
+
+Some limitations include:
+
+* Detection is based on fixed resource thresholds.
+* High resource usage does not necessarily indicate malicious behavior.
+* The system does not perform behavioral or malware analysis.
+* Browser activity may not necessarily generate an alert because alerts depend on the configured thresholds.
+* The monitoring data is exchanged through local JSON files rather than a dedicated database or message queue.
+* The response mechanism relies on process-level resource violations rather than identifying the underlying cause of the activity.
+
+Therefore, an alert should be interpreted as **potentially suspicious resource behavior**, rather than proof that a process is malicious.
+
+---
+
+## Educational Purpose
+
+This project demonstrates the basic concepts behind a host-based monitoring and response system, including:
+
+* Process enumeration
+* Resource monitoring
+* Threshold-based anomaly detection
+* Event logging
+* Inter-process data exchange
+* Automated response
+* Escalation policies
+* Basic process protection mechanisms
+
+It was developed as a university cybersecurity project to demonstrate how monitoring, detection, and automated response components can work together on a Linux system.
+
+> **Note:** In earlier versions of this project, `reader.py` was referred to as `monitor.py`. The functionality remains the same; `reader.py` is the current filename used in this version of the project.
